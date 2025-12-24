@@ -7,9 +7,13 @@ import pandas as pd
 from typing import Optional, List, Dict, Any
 import os
 import logging
+from pathlib import Path
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# Get the base directory (where app.py is located)
+BASE_DIR = Path(__file__).parent.parent.resolve()
 
 
 class DataLayer:
@@ -23,10 +27,19 @@ class DataLayer:
             csv_path: Path to CSV file (processed data)
             db_path: Path to DuckDB database
         """
-        # Use processed data if available, fallback to original
-        self.csv_path = csv_path or "data/processed_sales_data.csv"
-        if not os.path.exists(self.csv_path):
+        # Use absolute path relative to project root
+        default_csv = BASE_DIR / "data" / "processed_sales_data.csv"
+        
+        if csv_path:
+            self.csv_path = csv_path
+        elif default_csv.exists():
+            self.csv_path = str(default_csv)
+        else:
+            # Fallback to settings
             self.csv_path = settings.data_path
+            
+        logger.info(f"📁 Data path: {self.csv_path}")
+        logger.info(f"📁 File exists: {os.path.exists(self.csv_path)}")
         
         self.db_path = db_path or settings.duckdb_path
         self.conn = None
