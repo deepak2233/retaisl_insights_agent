@@ -427,7 +427,9 @@ def init_session():
         'orchestrator': None,
         'data_layer': None,
         'initialized': False,
-        'pending_question': ''
+        'pending_question': '',
+        'uploaded_data': None,
+        'eval_history': []
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -745,6 +747,215 @@ def render_analytics():
         st.error(f"Analytics Error: {e}")
 
 
+def render_data_upload():
+    """Render data upload section"""
+    st.markdown("""
+    <div class="section-header">
+        <div class="section-icon">📁</div>
+        <div>
+            <h2 class="section-title">Data Upload</h2>
+            <p class="section-desc">Upload new CSV data and refresh analytics</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("""
+        **Upload your retail sales data (CSV format)**
+        
+        Expected columns:
+        - `order_id` - Unique order identifier
+        - `date` - Order date
+        - `category` - Product category
+        - `state` - Customer state
+        - `amount` - Order amount
+        - `quantity` - Quantity ordered
+        - `status` - Order status
+        """)
+        
+        uploaded_file = st.file_uploader(
+            "Choose a CSV file",
+            type=['csv'],
+            help="Upload a CSV file with your retail data"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                df = pd.read_csv(uploaded_file)
+                st.success(f"✅ Loaded {len(df):,} rows, {len(df.columns)} columns")
+                
+                st.markdown("**Data Preview:**")
+                st.dataframe(df.head(10), use_container_width=True)
+                
+                st.markdown("**Column Info:**")
+                col_info = pd.DataFrame({
+                    'Column': df.columns,
+                    'Type': df.dtypes.astype(str),
+                    'Non-Null': df.count().values,
+                    'Sample': [str(df[c].iloc[0])[:30] if len(df) > 0 else '' for c in df.columns]
+                })
+                st.dataframe(col_info, use_container_width=True, hide_index=True)
+                
+                if st.button("🔄 Load This Data", type="primary"):
+                    # Save to data folder
+                    save_path = "data/uploaded_data.csv"
+                    df.to_csv(save_path, index=False)
+                    st.session_state.uploaded_data = save_path
+                    
+                    # Reload system with new data
+                    reset_orchestrator()
+                    reset_memory()
+                    st.session_state.initialized = False
+                    st.session_state.data_layer = None
+                    st.session_state.orchestrator = None
+                    st.success("✅ Data loaded! Refreshing system...")
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"❌ Error reading file: {e}")
+    
+    with col2:
+        st.markdown("**Current Data:**")
+        if st.session_state.initialized:
+            stats = st.session_state.data_layer.get_summary_stats()
+            o = stats.get("overall", {})
+            st.metric("Records", f"{o.get('total_orders', 0):,}")
+            st.metric("Date Range", o.get('date_range', 'N/A'))
+            st.metric("Revenue", f"₹{o.get('total_revenue', 0)/10000000:.2f} Cr")
+        else:
+            st.info("No data loaded")
+        
+        st.markdown("---")
+        st.markdown("**Sample Data:**")
+        if st.button("📥 Download Sample CSV"):
+            sample_data = """order_id,date,category,state,amount,quantity,status
+ORD001,2024-01-15,Electronics,Maharashtra,15000,2,Shipped
+ORD002,2024-01-16,Clothing,Karnataka,3500,3,Delivered
+ORD003,2024-01-17,Home,Delhi,8000,1,Shipped
+ORD004,2024-01-18,Electronics,Tamil Nadu,22000,1,Delivered
+ORD005,2024-01-19,Clothing,Gujarat,4500,2,Cancelled"""
+            st.download_button(
+                "Download",
+                data=sample_data,
+                file_name="sample_retail_data.csv",
+                mime="text/csv"
+            )
+
+
+def render_evaluation_dashboard():
+    """Render evaluation metrics dashboard"""
+    st.markdown("""
+    <div class="section-header">
+        <div class="section-icon">📈</div>
+        <div>
+            <h2 class="section-title">Evaluation Metrics</h2>
+            <p class="section-desc">AI quality metrics and performance analysis</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if not st.session_state.initialized:
+        st.warning("⚠️ System not initialized")
+        return
+    
+    orchestrator = st.session_state.orchestrator
+    
+    # Get evaluation summary
+    if orchestrator and orchestrator.evaluation:
+        eval_summary = orchestrator.get_evaluation_summary()
+        
+        # Main metrics
+        st.markdown("### 📊 Overall Quality Metrics")
+        
+        cols = st.columns(5)
+        metrics = [
+            ("🎯 Accuracy", eval_summary.get('accuracy', 0), "SQL query correctness"),
+            ("✅ Faithfulness", eval_summary.get('faithfulness', 0), "Response grounded in data"),
+            ("🔍 Relevance", eval_summary.get('relevance', 0), "Answer addresses question"),
+            ("📋 Completeness", eval_summary.get('completeness', 0), "Full answer provided"),
+            ("⭐ Overall", eval_summary.get('overall', 0), "Combined quality score")
+        ]
+        
+        for i, (name, value, desc) in enumerate(metrics):
+            with cols[i]:
+                score = value * 100
+                color = "#4ade80" if score >= 80 else "#fbbf24" if score >= 60 else "#f87171"
+                st.markdown(f"""
+                <div style="background:linear-gradient(145deg,#1e293b,#334155);padding:1rem;border-radius:12px;text-align:center;border:1px solid rgba(255,255,255,0.1);">
+                    <div style="font-size:1.5rem;font-weight:700;color:{color};">{score:.1f}%</div>
+                    <div style="font-size:0.9rem;color:white;margin:0.3rem 0;">{name}</div>
+                    <div style="font-size:0.7rem;color:rgba(255,255,255,0.5);">{desc}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown(f"<br>*Based on {eval_summary.get('total_evaluations', 0)} evaluated queries*", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Detailed metrics table
+        st.markdown("### 📋 Metric Definitions")
+        
+        metric_defs = pd.DataFrame([
+            {"Metric": "Accuracy", "Description": "How well the generated SQL matches expected query patterns", "Target": "≥ 85%"},
+            {"Metric": "Faithfulness", "Description": "Percentage of response statements grounded in actual data", "Target": "≥ 90%"},
+            {"Metric": "Relevance", "Description": "How directly the response addresses the user's question", "Target": "≥ 85%"},
+            {"Metric": "Completeness", "Description": "Whether the response provides a full, comprehensive answer", "Target": "≥ 80%"},
+            {"Metric": "Overall", "Description": "Weighted average: 25% Accuracy + 30% Faithfulness + 25% Relevance + 20% Completeness", "Target": "≥ 80%"}
+        ])
+        st.dataframe(metric_defs, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        
+        # Query history with scores
+        st.markdown("### 📜 Query Evaluation History")
+        
+        if st.session_state.messages:
+            history_data = []
+            for i, msg in enumerate(st.session_state.messages):
+                history_data.append({
+                    "#": i + 1,
+                    "Question": msg['q'][:50] + "..." if len(msg['q']) > 50 else msg['q'],
+                    "Confidence": f"{msg.get('conf', 0):.0f}%",
+                    "Time": msg.get('time', 'N/A')
+                })
+            
+            st.dataframe(pd.DataFrame(history_data), use_container_width=True, hide_index=True)
+        else:
+            st.info("No queries yet. Ask questions in the AI Assistant tab to see evaluation metrics.")
+        
+        st.markdown("---")
+        
+        # Evaluation parameters
+        st.markdown("### ⚙️ Evaluation Parameters")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Query Evaluation Weights:**")
+            st.markdown("""
+            | Parameter | Weight |
+            |-----------|--------|
+            | SQL Accuracy | 25% |
+            | Faithfulness | 30% |
+            | Relevance | 25% |
+            | Completeness | 20% |
+            """)
+        
+        with col2:
+            st.markdown("**Confidence Thresholds:**")
+            st.markdown("""
+            | Level | Score |
+            |-------|-------|
+            | 🟢 High | ≥ 80% |
+            | 🟡 Medium | 60-79% |
+            | 🔴 Low | < 60% |
+            """)
+    else:
+        st.info("Evaluation metrics will appear after you make queries in the AI Assistant tab.")
+
+
 def render_reports():
     """Render executive reports section"""
     st.markdown("""
@@ -835,6 +1046,7 @@ def render_footer():
     <div class="app-footer">
         <p><strong>Retail Insights AI</strong> — Enterprise Analytics Platform</p>
         <p>Multi-Agent AI • LangChain • LangGraph • DuckDB • Gemini</p>
+        <p style="margin-top:0.5rem;">Developed by <strong>Deepak Yadav</strong> | dk.yadav125566@gmail.com</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -855,7 +1067,7 @@ def main():
     render_kpis()
     
     # Main tabs
-    tab1, tab2, tab3 = st.tabs(["🤖 AI Assistant", "📊 Analytics", "📝 Reports"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🤖 AI Assistant", "📊 Analytics", "📁 Data Upload", "📈 Evaluation", "📝 Reports"])
     
     with tab1:
         render_ai_chat()
@@ -864,6 +1076,12 @@ def main():
         render_analytics()
     
     with tab3:
+        render_data_upload()
+    
+    with tab4:
+        render_evaluation_dashboard()
+    
+    with tab5:
         render_reports()
     
     render_system_panel()
