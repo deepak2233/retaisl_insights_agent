@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="Retail Insights AI",
     page_icon="Chart",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ============================================================================
@@ -132,6 +132,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Custom Sidebar Styling
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
+    }
+    .st-emotion-cache-16txtl3 {
+        padding: 2rem 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 # ============================================================================
 # SESSION STATE
@@ -139,7 +152,7 @@ st.markdown("""
 def init_session():
     """Initialize session state"""
     defaults = {
-        'messages': [],
+        'messages': [{"role": "assistant", "content": "Hello! I'm your Retail Insights Assistant. How can I help you analyze your data today?", "time": datetime.now().strftime("%H:%M")}],
         'orchestrator': None,
         'data_layer': None,
         'initialized': False,
@@ -276,12 +289,12 @@ def render_kpis():
 
 
 def render_ai_chat():
-    """Render AI chat interface"""
+    """Render modern AI chat interface"""
     st.markdown("""
     <div class="section-header">
         <div>
             <h2 class="section-title">AI Insights Assistant</h2>
-            <p class="section-desc">Ask questions in natural language about your retail data</p>
+            <p class="section-desc">Interactive retail intelligence with advanced guardrails</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -289,93 +302,81 @@ def render_ai_chat():
     if not st.session_state.initialized:
         st.warning("⏳ Initializing system...")
         return
-    
-    # Quick action buttons
-    st.markdown("**Quick Insights:**")
-    questions = {
-        "Revenue Analysis": "What is the total revenue and how is it distributed across categories?",
-        "Top Performers": "Which are the top 5 states and categories by revenue?",
-        "Trends": "Show the monthly revenue and order trend",
-        "B2B vs B2C": "Compare B2B and B2C sales performance in detail",
-        "Cancellations": "Analyze the cancellation rate by category and state",
-        "Orders": "What is the average order value by fulfillment type?"
-    }
-    
-    cols = st.columns(len(questions))
-    for i, (label, q) in enumerate(questions.items()):
-        with cols[i]:
-            if st.button(label, key=f"q_{i}", use_container_width=True):
-                st.session_state.pending_question = q
-                st.rerun()
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Chat input
-    col1, col2 = st.columns([6, 1])
-    with col1:
-        user_input = st.text_input(
-            "Ask your question",
-            value=st.session_state.get('pending_question', ''),
-            placeholder="e.g., What is the revenue breakdown by state?",
-            label_visibility="collapsed"
-        )
-    with col2:
-        submit = st.button("Ask", type="primary", use_container_width=True)
-    
-    # Process question
-    if submit and user_input:
-        with st.spinner("Analyzing..."):
-            try:
-                report_content = st.session_state.get('report_content')
-                answer = st.session_state.orchestrator.process_query(user_input, report_content=report_content)
-                
-                confidence = 85
-                if st.session_state.orchestrator.evaluation:
-                    es = st.session_state.orchestrator.get_evaluation_summary()
-                    confidence = es.get('overall', 0.85) * 100
-                
-                st.session_state.messages.append({
-                    "q": user_input,
-                    "a": answer,
-                    "time": datetime.now().strftime("%H:%M"),
-                    "conf": confidence
-                })
-                st.session_state.pending_question = ''
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
-    
-    # Display messages in natural chronogical order
-    if st.session_state.messages:
-        st.markdown("<div class='chat-window'>", unsafe_allow_html=True)
-        
-        for msg in st.session_state.messages[-15:]:
-            conf = msg.get('conf', 85)
-            conf_class = 'conf-high' if conf >= 80 else 'conf-med' if conf >= 60 else 'conf-low'
-            
-            # User Message
-            st.markdown(f"""
-            <div class="message-meta" style="text-align: right;">{msg['time']} | You</div>
-            <div class="message-bubble user-message">
-                {msg['q']}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # AI Message
-            st.markdown(f"""
-            <div class="message-meta">{msg['time']} | AI Assistant ({msg['conf']:.0f}% confidence)</div>
-            <div class="message-bubble ai-message">
-                {msg['a']}
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        if st.button("Clear Chat", key="clear"):
-            st.session_state.messages = []
+
+    # Clear chat button in a reasonable spot
+    col_e1, col_e2 = st.columns([5, 1])
+    with col_e2:
+        if st.button("Clear Chat", use_container_width=True):
+            st.session_state.messages = [{"role": "assistant", "content": "Chat cleared. How can I help you now?", "time": datetime.now().strftime("%H:%M")}]
             if st.session_state.orchestrator:
                 st.session_state.orchestrator.clear_memory()
             st.rerun()
+    
+    # Display message history
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if "conf" in msg:
+                st.caption(f"Confidence: {msg['conf']:.0f}% | {msg['time']}")
+            else:
+                st.caption(msg["time"])
+
+    # Quick action buttons (above chat input)
+    st.markdown("**Suggestions:**")
+    questions = {
+        "Revenue": "What is the total revenue and how is it distributed across categories?",
+        "Top States": "Which are the top 5 states by revenue?",
+        "Cancellations": "Analyze the cancellation rate by category",
+        "SQL Query": "Show the sql query for top 5 categories by revenue"
+    }
+    
+    rows = st.columns(len(questions))
+    for i, (label, q) in enumerate(questions.items()):
+        if rows[i].button(label, key=f"q_{i}", use_container_width=True):
+            st.session_state.pending_question = q
+            st.rerun()
+
+    # Chat input
+    prompt = st.chat_input("Ask about sales, trends, or specific reports...")
+    
+    # Handle pending question from buttons
+    if st.session_state.get('pending_question'):
+        prompt = st.session_state.pending_question
+        st.session_state.pending_question = ''
+
+    if prompt:
+        # User message
+        st.session_state.messages.append({
+            "role": "user", 
+            "content": prompt,
+            "time": datetime.now().strftime("%H:%M")
+        })
+        # Display immediately
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Assistant response
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing..."):
+                try:
+                    report_content = st.session_state.get('report_content')
+                    answer = st.session_state.orchestrator.process_query(prompt, report_content=report_content)
+                    
+                    confidence = 85
+                    if st.session_state.orchestrator.evaluation:
+                        es = st.session_state.orchestrator.get_evaluation_summary()
+                        confidence = es.get('overall', 0.85) * 100
+                    
+                    st.markdown(answer)
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": answer,
+                        "time": datetime.now().strftime("%H:%M"),
+                        "conf": confidence
+                    })
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 
 def render_analytics():
@@ -1011,35 +1012,42 @@ def main():
         with st.spinner("Starting Retail Insights AI..."):
             load_system()
     
-    # Render components
+    # Sidebar Navigation
+    with st.sidebar:
+        st.markdown("### 📊 Navigation")
+        selected_page = st.radio(
+            "Select Section",
+            ["AI Assistant", "Analytics", "Data Upload", "Architecture", "Evaluation", "Reports"],
+            label_visibility="collapsed"
+        )
+        
+        st.markdown("---")
+        render_system_panel()
+        st.markdown("---")
+
+    # Render Header (always visible)
     render_hero()
-    render_kpis()
     
-    # Main tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "AI Assistant", "Analytics", "Data Upload", 
-        "Evaluation", "Architecture", "Reports"
-    ])
-    
-    with tab1:
+    # Conditional Rendering based on Navigation
+    if selected_page == "AI Assistant":
+        render_kpis()
         render_ai_chat()
     
-    with tab2:
+    elif selected_page == "Analytics":
         render_analytics()
-    
-    with tab3:
+        
+    elif selected_page == "Data Upload":
         render_data_upload()
-    
-    with tab4:
+        
+    elif selected_page == "Architecture":
+        render_architecture()
+        
+    elif selected_page == "Evaluation":
         render_evaluation_dashboard()
         
-    with tab5:
-        render_architecture()
-    
-    with tab6:
+    elif selected_page == "Reports":
         render_reports()
     
-    render_system_panel()
     render_footer()
 
 
