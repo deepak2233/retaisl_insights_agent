@@ -714,15 +714,25 @@ def render_evaluation_dashboard():
         
         if st.session_state.messages:
             history_data = []
-            for i, msg in enumerate(st.session_state.messages):
-                history_data.append({
-                    "#": i + 1,
-                    "Question": msg['q'][:50] + "..." if len(msg['q']) > 50 else msg['q'],
-                    "Confidence": f"{msg.get('conf', 0):.0f}%",
-                    "Time": msg.get('time', 'N/A')
-                })
+            for i in range(len(st.session_state.messages)):
+                msg = st.session_state.messages[i]
+                if msg["role"] == "assistant" and "conf" in msg:
+                    # Try to find the preceding user question
+                    question = "Unknown Question"
+                    if i > 0 and st.session_state.messages[i-1]["role"] == "user":
+                        question = st.session_state.messages[i-1]["content"]
+                    
+                    history_data.append({
+                        "#": len(history_data) + 1,
+                        "Question": question[:50] + "..." if len(question) > 50 else question,
+                        "Confidence": f"{msg.get('conf', 0):.0f}%",
+                        "Time": msg.get('time', 'N/A')
+                    })
             
-            st.dataframe(pd.DataFrame(history_data), use_container_width=True, hide_index=True)
+            if history_data:
+                st.dataframe(pd.DataFrame(history_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("No analytical queries evaluated yet.")
         else:
             st.info("No queries yet. Ask questions in the AI Assistant tab to see evaluation metrics.")
         
