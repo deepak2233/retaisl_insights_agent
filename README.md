@@ -122,8 +122,4 @@ User Question → Query Agent → Data Extraction → Validation → Response Ge
 📧 dk.yadav125566@gmail.com  
 🔗 [GitHub](https://github.com/deepak2233)
 
----
 
-## 📄 License
-
-MIT License
